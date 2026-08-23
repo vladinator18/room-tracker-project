@@ -19,7 +19,7 @@ export default function Heatmap() {
   const fetchCSVData = async () => {
     try {
       // Vite serves files in the public folder directly at the root URL
-      const response = await fetch('/compiled_schedule.csv');
+      const response = await fetch('compiled_schedule.csv');
       const csvText = await response.text();
       
       parseCSVToGrid(csvText);
