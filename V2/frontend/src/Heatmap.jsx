@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Loader2 } from 'lucide-react';
+// This tells Vite to bundle the CSV directly as a giant text string
+import csvText from '../public/compiled_schedule.csv?raw';
 
 export default function Heatmap() {
   const [availabilityData, setAvailabilityData] = useState([]);
@@ -11,50 +13,32 @@ export default function Heatmap() {
     '03:00 PM', '04:30 PM', '06:00 PM', '07:30 PM'
   ];
 
-  // Fetch the CSV file from the public folder when the component loads
+  // Instantly load the data on mount - no fetch needed!
   useEffect(() => {
-    fetchCSVData();
-  }, []);
-
-  const fetchCSVData = async () => {
     try {
-      // Vite serves files in the public folder directly at the root URL
-      const response = await fetch('compiled_schedule.csv');
-      const csvText = await response.text();
-      
       parseCSVToGrid(csvText);
     } catch (error) {
-      console.error("Error fetching the CSV:", error);
+      console.error("Error parsing the CSV:", error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const parseCSVToGrid = (csvText) => {
-    // 1. Split the text into rows and remove any empty lines
-    const rows = csvText.split('\n').filter(row => row.trim() !== '');
-    
-    // 2. Initialize a blank 9x7 grid (9 timeslots, 7 days)
+  const parseCSVToGrid = (text) => {
+    const rows = text.split('\n').filter(row => row.trim() !== '');
     const grid = Array(9).fill(0).map(() => Array(7).fill(0));
 
-    // 3. Skip the header row (i=1), then parse the data
-    // Assuming CSV format: Time, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday
     for (let i = 1; i < rows.length; i++) {
       const columns = rows[i].split(',');
-      
-      // We only care about the 9 time blocks we defined
       const timeLabel = columns[0].trim();
       const rowIndex = times.indexOf(timeLabel);
       
       if (rowIndex !== -1) {
-        // Loop through the 7 days and push the room counts into the grid
         for (let colIndex = 0; colIndex < 7; colIndex++) {
-          // +1 because the first column is the Time label
           grid[rowIndex][colIndex] = parseInt(columns[colIndex + 1], 10) || 0; 
         }
       }
     }
-
     setAvailabilityData(grid);
   };
 
@@ -74,7 +58,7 @@ export default function Heatmap() {
           <h1 className="text-2xl font-bold text-slate-800">Room Availability Heatmap</h1>
         </div>
         <div className="bg-slate-100 text-slate-600 px-4 py-2 rounded-full text-sm font-medium">
-          Tracking rooms across Mapúa Makati
+          Tracking rooms across campus
         </div>
       </div>
 
