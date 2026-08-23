@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { authApi } from './services/authApi';
-import { Lock, Mail, Loader2 } from 'lucide-react';
+import { Lock, User, Loader2 } from 'lucide-react';
 
 export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -16,12 +16,16 @@ export default function Auth() {
 
     try {
       if (isLogin) {
-        await authApi.signIn(email, password);
+        await authApi.signIn(username, password);
       } else {
-        await authApi.signUp(email, password);
+        await authApi.signUp(username, password);
       }
     } catch (error) {
-      setErrorMsg(error.message);
+      // Clean up Supabase's default error messages to make them make sense for usernames
+      let msg = error.message;
+      if (msg.includes('email')) msg = msg.replace('email', 'username');
+      if (msg === 'Invalid login credentials') msg = 'Incorrect username or password';
+      setErrorMsg(msg);
     } finally {
       setIsLoading(false);
     }
@@ -51,16 +55,16 @@ export default function Auth() {
 
         <form onSubmit={handleAuth} className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Email Address</label>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Username or Student ID</label>
             <div className="relative">
-              <Mail className="w-5 h-5 text-slate-400 absolute left-3 top-2.5" />
+              <User className="w-5 h-5 text-slate-400 absolute left-3 top-2.5" />
               <input
-                type="email"
+                type="text"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 className="w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="user@example.com"
+                placeholder="e.g. timothy123"
               />
             </div>
           </div>

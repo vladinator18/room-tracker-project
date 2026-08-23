@@ -1,13 +1,21 @@
 import { supabase } from './supabaseClient';
 
+// This helper converts a plain username into an email format that Supabase accepts
+const formatUsername = (username) => {
+  const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '');
+  return `${cleanUsername}@roomtracker.local`;
+};
+
 export const authApi = {
-  signIn: async (email, password) => {
+  signIn: async (username, password) => {
+    const email = formatUsername(username);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     return data;
   },
   
-  signUp: async (email, password) => {
+  signUp: async (username, password) => {
+    const email = formatUsername(username);
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
     return data;
