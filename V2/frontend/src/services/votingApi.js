@@ -7,10 +7,10 @@ export const votingApi = {
       .from('authorized_emails')
       .select('email')
       .eq('email', email)
-      .maybeSingle(); // maybeSingle returns null instead of throwing an error if not found
+      .maybeSingle(); 
       
     if (error) throw error;
-    return data !== null; // Returns true if the email exists, false if it doesn't
+    return data !== null; 
   },
 
   // 2. Create an event (now requires creator_email)
@@ -61,6 +61,17 @@ export const votingApi = {
     const { data, error } = await supabase
       .from('date_votes')
       .insert([{ option_id: optionId, voter_email: voterEmail }]);
+      
+    if (error) throw error;
+    return data;
+  },
+
+  // 5. Fetch all events for the dashboard
+  getAllEvents: async () => {
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .order('created_at', { ascending: false });
       
     if (error) throw error;
     return data;
