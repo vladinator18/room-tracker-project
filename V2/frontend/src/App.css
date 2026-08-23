@@ -1,170 +1,42 @@
-import { useState, useEffect, useMemo } from 'react';
-import Papa from 'papaparse';
-import { Calendar, Clock, MapPin, CheckCircle2, XCircle } from 'lucide-react';
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const TIMES = ['07:30 AM', '09:00 AM', '10:30 AM', '12:00 PM', '01:30 PM', '03:00 PM', '04:30 PM', '06:00 PM', '07:30 PM'];
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
 
-export default function App() {
-  const [data, setData] = useState([]);
-  const [selectedCell, setSelectedCell] = useState(null);
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
 
-  useEffect(() => {
-    const fetchData = async () => {
-      const response = await fetch('/compiled_schedule.csv');
-      const reader = await response.text();
-      
-      Papa.parse(reader, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (results) => {
-          setData(results.data);
-        },
-      });
-    };
-    fetchData();
-  }, []);
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
 
-  // Process the raw CSV into a 2D lookup table
-  const heatmapData = useMemo(() => {
-    const matrix = {};
-    
-    data.forEach(row => {
-      const day = row.Day;
-      const time = row['Time Slot'];
-      if (!matrix[day]) matrix[day] = {};
+.card {
+  padding: 2em;
+}
 
-      // Extract only the room columns (everything except Day and Time Slot)
-      const roomNames = Object.keys(row).filter(k => k !== 'Day' && k !== 'Time Slot');
-      const availableRooms = roomNames.filter(room => row[room] === 'Available');
-
-      matrix[day][time] = {
-        availableCount: availableRooms.length,
-        totalCount: roomNames.length,
-        availableRooms: availableRooms
-      };
-    });
-    
-    return matrix;
-  }, [data]);
-
-  // Determine cell color based on availability ratio
-  const getCellColor = (available, total) => {
-    if (total === 0) return 'bg-slate-100 border-slate-200';
-    const ratio = available / total;
-    
-    if (ratio === 0) return 'bg-rose-500 hover:bg-rose-600 text-white border-rose-600'; // 0 free
-    if (ratio < 0.35) return 'bg-amber-400 hover:bg-amber-500 text-slate-900 border-amber-500'; // Few free
-    if (ratio < 0.75) return 'bg-emerald-400 hover:bg-emerald-500 text-slate-900 border-emerald-500'; // Most free
-    return 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'; // All free
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
-      <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        
-        {/* Header Section */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 border-b pb-4">
-          <div className="flex items-center gap-3">
-            <Calendar className="w-8 h-8 text-blue-600" />
-            <h1 className="text-2xl font-bold text-slate-800">Room Availability Heatmap</h1>
-          </div>
-          <div className="text-sm font-medium text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
-            {data.length > 0 ? `Tracking 19 rooms across 63 time blocks` : 'Loading data...'}
-          </div>
-        </div>
-
-        {/* Legend */}
-        <div className="flex items-center gap-4 mb-6 text-sm text-slate-600">
-          <span className="font-semibold">Legend:</span>
-          <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-rose-500"></div> Full</div>
-          <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-amber-400"></div> Limited</div>
-          <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-emerald-400"></div> Good</div>
-          <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-emerald-600"></div> Wide Open</div>
-        </div>
-
-        {/* Heatmap Grid */}
-        <div className="overflow-x-auto pb-4">
-          <div className="min-w-[800px]">
-            {/* Grid Headers */}
-            <div className="grid grid-cols-8 gap-2 mb-2">
-              <div className="p-2"></div> {/* Empty corner */}
-              {DAYS.map(day => (
-                <div key={day} className="text-center font-bold text-slate-600 text-sm py-2">
-                  {day}
-                </div>
-              ))}
-            </div>
-
-            {/* Grid Body */}
-            {TIMES.map(time => (
-              <div key={time} className="grid grid-cols-8 gap-2 mb-2">
-                {/* Time Label */}
-                <div className="flex items-center justify-end pr-4 text-xs font-semibold text-slate-500 whitespace-nowrap">
-                  {time}
-                </div>
-                
-                {/* Day Cells */}
-                {DAYS.map(day => {
-                  const cellData = heatmapData[day]?.[time] || { availableCount: 0, totalCount: 0, availableRooms: [] };
-                  const isSelected = selectedCell?.day === day && selectedCell?.time === time;
-                  
-                  return (
-                    <button
-                      key={`${day}-${time}`}
-                      onClick={() => setSelectedCell({ day, time, ...cellData })}
-                      className={`
-                        h-12 rounded border shadow-sm transition-all flex items-center justify-center font-bold text-sm
-                        ${getCellColor(cellData.availableCount, cellData.totalCount)}
-                        ${isSelected ? 'ring-4 ring-blue-300 scale-105 z-10' : 'hover:scale-105'}
-                      `}
-                      title={`${cellData.availableCount} rooms available`}
-                    >
-                      {cellData.availableCount > 0 ? cellData.availableCount : '0'}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Selected Details Panel */}
-        {selectedCell && (
-          <div className="mt-8 bg-blue-50 border border-blue-100 rounded-xl p-6 animate-in fade-in slide-in-from-bottom-4">
-            <div className="flex items-center gap-4 border-b border-blue-200 pb-4 mb-4">
-              <div className="bg-blue-100 p-2 rounded-lg">
-                <Clock className="text-blue-700 w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-blue-900">
-                  {selectedCell.day} at {selectedCell.time}
-                </h3>
-                <p className="text-blue-700 font-medium">
-                  {selectedCell.availableCount} out of {selectedCell.totalCount} rooms available
-                </p>
-              </div>
-            </div>
-
-            {selectedCell.availableCount === 0 ? (
-              <div className="flex items-center gap-2 text-rose-600 font-semibold p-4 bg-rose-50 rounded-lg">
-                <XCircle className="w-5 h-5" />
-                No rooms are available during this time slot.
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {selectedCell.availableRooms.map(room => (
-                  <div key={room} className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border shadow-sm text-slate-700 font-semibold">
-                    <MapPin className="w-4 h-4 text-emerald-500" />
-                    {room}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-      </div>
-    </div>
-  );
+.read-the-docs {
+  color: #888;
 }
