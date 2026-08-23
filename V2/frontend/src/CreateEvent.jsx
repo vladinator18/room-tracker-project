@@ -1,27 +1,26 @@
 import { useState } from 'react';
 import { votingApi } from './services/votingApi';
-import { CalendarPlus, Plus, Trash2, Loader2, CheckCircle } from 'lucide-react';
+import { CalendarPlus, Plus, Trash2, Loader2, CheckCircle, Mail } from 'lucide-react';
 
-export default function CreateEvent({ creatorEmail, onEventCreated }) {
+export default function CreateEvent({ onEventCreated }) {
+  const [creatorEmail, setCreatorEmail] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [dates, setDates] = useState(['', '']); // Start with two blank options
+  const [dates, setDates] = useState(['', '']); 
   const [isLoading, setIsLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Update a specific date row
   const handleDateChange = (index, value) => {
     const newDates = [...dates];
     newDates[index] = value;
     setDates(newDates);
   };
 
-  // Add a new blank date row
   const addDateRow = () => setDates([...dates, '']);
 
-  // Remove a date row
   const removeDateRow = (index) => {
-    if (dates.length <= 2) return; // Keep at least 2 options
+    if (dates.length <= 2) return;
     setDates(dates.filter((_, i) => i !== index));
   };
 
@@ -29,30 +28,40 @@ export default function CreateEvent({ creatorEmail, onEventCreated }) {
     e.preventDefault();
     setIsLoading(true);
     setSuccessMsg('');
+    setErrorMsg('');
 
-    // Filter out any blank rows before submitting
+    const cleanEmail = creatorEmail.trim().toLowerCase();
     const validDates = dates.filter(d => d.trim() !== '');
 
     if (validDates.length < 2) {
-      alert("Please provide at least two date/time options.");
+      setErrorMsg("Please provide at least two date/time options.");
       setIsLoading(false);
       return;
     }
 
     try {
-      const eventId = await votingApi.createEvent(title, description, validDates, creatorEmail);
+      // 1. Verify the email against the whitelist first
+      const isAuthorized = await votingApi.checkWhitelist(cleanEmail);
+      if (!isAuthorized) {
+        setErrorMsg("Access Denied: This email is not authorized to create events.");
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. If authorized, create the event
+      const eventId = await votingApi.createEvent(title, description, validDates, cleanEmail);
       setSuccessMsg('Event created successfully!');
       
-      // Optional: Pass the new ID back to the main App to switch views
       if (onEventCreated) onEventCreated(eventId);
       
       // Reset form
       setTitle('');
       setDescription('');
       setDates(['', '']);
+      setCreatorEmail('');
     } catch (error) {
       console.error(error);
-      alert("Failed to create event.");
+      setErrorMsg("Failed to create event. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -72,7 +81,31 @@ export default function CreateEvent({ creatorEmail, onEventCreated }) {
         </div>
       )}
 
+      {errorMsg && (
+        <div className="bg-rose-50 text-rose-600 p-4 rounded-lg text-sm font-medium mb-6">
+          {errorMsg}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Creator Authorization */}
+        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+          <label className="block text-sm font-semibold text-slate-700 mb-1">Your Authorized Email</label>
+          <div className="relative">
+            <Mail className="w-5 h-5 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="email"
+              required
+              value={creatorEmail}
+              onChange={(e) => setCreatorEmail(e.target.value)}
+              className="w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              placeholder="Must be on the whitelist to create events"
+            />
+          </div>
+        </div>
+
+        <hr className="border-slate-200" />
+
         {/* Event Details */}
         <div className="space-y-4">
           <div>
@@ -92,7 +125,7 @@ export default function CreateEvent({ creatorEmail, onEventCreated }) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px]"
-              placeholder="e.g., Trying to figure out if we can avoid the Quarterm schedule conflicts. Vote on which window works best!"
+              placeholder="e.g., Trying to figure out if we can avoid the schedule conflicts."
             />
           </div>
         </div>
