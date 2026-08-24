@@ -1,8 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import Papa from 'papaparse';
-import { Calendar, Clock, MapPin, XCircle, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
-// Import the NEW Master Schedule file
-import csvText from '../public/Master_Schedule_Merged.csv?raw';
+import { supabase } from './services/supabaseClient';
+import { Calendar, Clock, MapPin, XCircle, Filter, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const TIMES = ['07:30 AM', '09:00 AM', '10:30 AM', '12:00 PM', '01:30 PM', '03:00 PM', '04:30 PM', '06:00 PM', '07:30 PM'];
@@ -11,67 +9,86 @@ const ROOMS_PER_PAGE = 10;
 
 export default function Heatmap() {
   const [data, setData] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedCell, setSelectedCell] = useState(null);
   const [requiredBlocks, setRequiredBlocks] = useState(1); 
   const [roomCategory, setRoomCategory] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Dynamic Room Counts based on the CSV data
+  // Dynamic Room Counts
   const [roomCounts, setRoomCounts] = useState({ total: 0, labs: 0, lectures: 0 });
 
   useEffect(() => {
-    Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        setData(results.data);
+    const fetchSupabaseData = async () => {
+      try {
+        const { data: dbData, error } = await supabase.from('campus_schedule').select('*');
+        if (error) throw error;
+
+        setData(dbData || []);
         
-        // Dynamically calculate how many rooms exist in the dataset
-        if (results.data.length > 0) {
-          const allRooms = Object.keys(results.data[0]).filter(k => k !== 'Day' && k !== 'Time Slot');
-          const labs = allRooms.filter(room => LAB_NUMBERS.some(num => room.includes(num))).length;
+        // Dynamically calculate how many rooms exist in the database table
+        if (dbData && dbData.length > 0) {
+          const sampleRow = dbData[0];
+          const excludedKeys = ['id', 'day', 'time_slot', 'time slot'];
+          
+          const allRooms = Object.keys(sampleRow).filter(k => !excludedKeys.includes(k.toLowerCase()));
+          const labs = allRooms.filter(room => LAB_NUMBERS.some(num => room.replace(/_/g, ' ').includes(num))).length;
+          
           setRoomCounts({
             total: allRooms.length,
             labs: labs,
             lectures: allRooms.length - labs
           });
         }
-      },
-    });
+      } catch (error) {
+        console.error("Error fetching from Supabase:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchSupabaseData();
   }, []);
 
   const heatmapData = useMemo(() => {
     const matrix = {};
     const baseAvailability = {};
     
-    // Set the max threshold for colors based on current filter
     let maxThreshold = roomCounts.total;
     if (roomCategory === 'Lab') maxThreshold = roomCounts.labs;
     if (roomCategory === 'Lecture') maxThreshold = roomCounts.lectures;
 
-    // 1. Map out base availability based on the chosen category
+    // 1. Map out base availability
     data.forEach(row => {
-      const day = row.Day;
-      const time = row['Time Slot'];
+      const day = row.day || row.Day;
+      const time = row.time_slot || row['Time Slot'] || row['time slot'];
+      if (!day || !time) return;
+
       if (!baseAvailability[day]) baseAvailability[day] = {};
 
-      let roomNames = Object.keys(row).filter(k => k !== 'Day' && k !== 'Time Slot');
-      
-      roomNames = roomNames.filter(room => {
-        const isLab = LAB_NUMBERS.some(num => room.includes(num));
-        if (roomCategory === 'Lab' && !isLab) return false;
-        if (roomCategory === 'Lecture' && isLab) return false;
-        return row[room] === 'Available';
+      let availableRooms = [];
+      Object.entries(row).forEach(([key, value]) => {
+        const lowerKey = key.toLowerCase();
+        if (['id', 'day', 'time_slot', 'time slot'].includes(lowerKey)) return;
+
+        if (value === 'Available') {
+          // Clean up column names from Supabase (e.g. replacing underscores with spaces)
+          const cleanName = key.replace(/_/g, ' ').toUpperCase();
+          const isLab = LAB_NUMBERS.some(num => cleanName.includes(num));
+
+          if (roomCategory === 'All') availableRooms.push(cleanName);
+          else if (roomCategory === 'Lab' && isLab) availableRooms.push(cleanName);
+          else if (roomCategory === 'Lecture' && !isLab) availableRooms.push(cleanName);
+        }
       });
 
-      baseAvailability[day][time] = roomNames;
+      baseAvailability[day][time] = availableRooms;
     });
 
     // 2. Calculate consecutive blocks
     DAYS.forEach(day => {
       matrix[day] = {};
       TIMES.forEach((time, index) => {
-        
         if (index + requiredBlocks > TIMES.length) {
           matrix[day][time] = { availableCount: 0, totalCount: maxThreshold, availableRooms: [] };
           return;
@@ -181,45 +198,51 @@ export default function Heatmap() {
         <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-emerald-600"></div> Wide Open</div>
       </div>
 
-      <div className="overflow-x-auto pb-4">
-        <div className="min-w-[800px]">
-          <div className="grid grid-cols-[100px_repeat(7,1fr)] gap-2 mb-2">
-            <div className="p-2"></div>
-            {DAYS.map(day => (
-              <div key={day} className="text-center font-bold text-slate-600 text-sm py-2">{day}</div>
+      {isLoading ? (
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      ) : (
+        <div className="overflow-x-auto pb-4">
+          <div className="min-w-[800px]">
+            <div className="grid grid-cols-[100px_repeat(7,1fr)] gap-2 mb-2">
+              <div className="p-2"></div>
+              {DAYS.map(day => (
+                <div key={day} className="text-center font-bold text-slate-600 text-sm py-2">{day}</div>
+              ))}
+            </div>
+
+            {TIMES.map((time, index) => (
+              <div key={time} className="grid grid-cols-[100px_repeat(7,1fr)] gap-2 mb-2">
+                <div className="flex items-center justify-end pr-4 text-xs font-semibold text-slate-500 whitespace-nowrap">
+                  {time}
+                </div>
+                
+                {DAYS.map(day => {
+                  const cellData = heatmapData[day]?.[time] || { availableCount: 0, totalCount: roomCounts.total, availableRooms: [] };
+                  const isSelected = selectedCell?.day === day && selectedCell?.time === time;
+                  const isOutOfBounds = index + requiredBlocks > TIMES.length;
+                  
+                  return (
+                    <button
+                      key={`${day}-${time}`}
+                      onClick={() => { if (!isOutOfBounds) handleCellClick(cellData, day, time); }}
+                      disabled={isOutOfBounds}
+                      className={`
+                        h-12 rounded border shadow-sm transition-all flex items-center justify-center font-bold text-sm
+                        ${getCellColor(cellData.availableCount, cellData.totalCount)}
+                        ${isSelected ? 'ring-4 ring-blue-300 scale-105 z-10' : (!isOutOfBounds && 'hover:scale-105')}
+                      `}
+                    >
+                      {isOutOfBounds ? '-' : (cellData.availableCount > 0 ? cellData.availableCount : '0')}
+                    </button>
+                  );
+                })}
+              </div>
             ))}
           </div>
-
-          {TIMES.map((time, index) => (
-            <div key={time} className="grid grid-cols-[100px_repeat(7,1fr)] gap-2 mb-2">
-              <div className="flex items-center justify-end pr-4 text-xs font-semibold text-slate-500 whitespace-nowrap">
-                {time}
-              </div>
-              
-              {DAYS.map(day => {
-                const cellData = heatmapData[day]?.[time] || { availableCount: 0, totalCount: roomCounts.total, availableRooms: [] };
-                const isSelected = selectedCell?.day === day && selectedCell?.time === time;
-                const isOutOfBounds = index + requiredBlocks > TIMES.length;
-                
-                return (
-                  <button
-                    key={`${day}-${time}`}
-                    onClick={() => { if (!isOutOfBounds) handleCellClick(cellData, day, time); }}
-                    disabled={isOutOfBounds}
-                    className={`
-                      h-12 rounded border shadow-sm transition-all flex items-center justify-center font-bold text-sm
-                      ${getCellColor(cellData.availableCount, cellData.totalCount)}
-                      ${isSelected ? 'ring-4 ring-blue-300 scale-105 z-10' : (!isOutOfBounds && 'hover:scale-105')}
-                    `}
-                  >
-                    {isOutOfBounds ? '-' : (cellData.availableCount > 0 ? cellData.availableCount : '0')}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
         </div>
-      </div>
+      )}
 
       {selectedCell && (
         <div className="mt-8 bg-slate-50 border border-slate-200 rounded-xl p-6 animate-in fade-in slide-in-from-bottom-4">
