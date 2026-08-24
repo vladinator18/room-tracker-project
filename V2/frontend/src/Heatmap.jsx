@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import Papa from 'papaparse';
 import { Calendar, Clock, MapPin, XCircle, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
-import csvText from '../public/compiled_schedule.csv?raw';
+// Import the NEW Master Schedule file
+import csvText from '../public/Master_Schedule_Merged.csv?raw';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const TIMES = ['07:30 AM', '09:00 AM', '10:30 AM', '12:00 PM', '01:30 PM', '03:00 PM', '04:30 PM', '06:00 PM', '07:30 PM'];
@@ -15,12 +16,26 @@ export default function Heatmap() {
   const [roomCategory, setRoomCategory] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Dynamic Room Counts based on the CSV data
+  const [roomCounts, setRoomCounts] = useState({ total: 0, labs: 0, lectures: 0 });
+
   useEffect(() => {
     Papa.parse(csvText, {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
         setData(results.data);
+        
+        // Dynamically calculate how many rooms exist in the dataset
+        if (results.data.length > 0) {
+          const allRooms = Object.keys(results.data[0]).filter(k => k !== 'Day' && k !== 'Time Slot');
+          const labs = allRooms.filter(room => LAB_NUMBERS.some(num => room.includes(num))).length;
+          setRoomCounts({
+            total: allRooms.length,
+            labs: labs,
+            lectures: allRooms.length - labs
+          });
+        }
       },
     });
   }, []);
@@ -28,10 +43,11 @@ export default function Heatmap() {
   const heatmapData = useMemo(() => {
     const matrix = {};
     const baseAvailability = {};
-    let totalTrackedRooms = 19; // Default max rooms
-
-    if (roomCategory === 'Lab') totalTrackedRooms = 11;
-    if (roomCategory === 'Lecture') totalTrackedRooms = 8;
+    
+    // Set the max threshold for colors based on current filter
+    let maxThreshold = roomCounts.total;
+    if (roomCategory === 'Lab') maxThreshold = roomCounts.labs;
+    if (roomCategory === 'Lecture') maxThreshold = roomCounts.lectures;
 
     // 1. Map out base availability based on the chosen category
     data.forEach(row => {
@@ -41,7 +57,6 @@ export default function Heatmap() {
 
       let roomNames = Object.keys(row).filter(k => k !== 'Day' && k !== 'Time Slot');
       
-      // Filter by Lab vs Lecture
       roomNames = roomNames.filter(room => {
         const isLab = LAB_NUMBERS.some(num => room.includes(num));
         if (roomCategory === 'Lab' && !isLab) return false;
@@ -52,13 +67,13 @@ export default function Heatmap() {
       baseAvailability[day][time] = roomNames;
     });
 
-    // 2. Calculate consecutive blocks and max free time per room
+    // 2. Calculate consecutive blocks
     DAYS.forEach(day => {
       matrix[day] = {};
       TIMES.forEach((time, index) => {
         
         if (index + requiredBlocks > TIMES.length) {
-          matrix[day][time] = { availableCount: 0, totalCount: totalTrackedRooms, availableRooms: [] };
+          matrix[day][time] = { availableCount: 0, totalCount: maxThreshold, availableRooms: [] };
           return;
         }
 
@@ -67,7 +82,6 @@ export default function Heatmap() {
         
         startingRooms.forEach(room => {
           let consecutiveSlots = 1;
-          
           while (
             index + consecutiveSlots < TIMES.length && 
             (baseAvailability[day]?.[TIMES[index + consecutiveSlots]] || []).includes(room)
@@ -76,26 +90,22 @@ export default function Heatmap() {
           }
 
           if (consecutiveSlots >= requiredBlocks) {
-            qualifiedRooms.push({
-              name: room,
-              slotsFree: consecutiveSlots
-            });
+            qualifiedRooms.push({ name: room, slotsFree: consecutiveSlots });
           }
         });
 
-        // Organize from MOST available to LEAST available
         qualifiedRooms.sort((a, b) => b.slotsFree - a.slotsFree);
 
         matrix[day][time] = {
           availableCount: qualifiedRooms.length,
-          totalCount: totalTrackedRooms,
+          totalCount: maxThreshold,
           availableRooms: qualifiedRooms
         };
       });
     });
     
     return matrix;
-  }, [data, requiredBlocks, roomCategory]);
+  }, [data, requiredBlocks, roomCategory, roomCounts]);
 
   const getCellColor = (available, total) => {
     if (total === 0) return 'bg-slate-100 border-slate-200 cursor-not-allowed';
@@ -107,7 +117,6 @@ export default function Heatmap() {
     return 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'; 
   };
 
-  // Helper to color-code the individual room tags based on how long they are free
   const getRoomTagStyles = (slotsFree) => {
     if (slotsFree >= 4) return 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-sm'; 
     if (slotsFree === 3) return 'bg-blue-50 border-blue-300 text-blue-800 shadow-sm';      
@@ -115,21 +124,19 @@ export default function Heatmap() {
     return 'bg-slate-50 border-slate-300 text-slate-700 shadow-sm';                              
   };
 
-  // Pagination logic
   const handleCellClick = (cellData, day, time) => {
     setSelectedCell({ day, time, ...cellData });
-    setCurrentPage(1); // Reset to page 1 when a new block is clicked
+    setCurrentPage(1); 
   };
 
   const paginatedRooms = selectedCell 
     ? selectedCell.availableRooms.slice((currentPage - 1) * ROOMS_PER_PAGE, currentPage * ROOMS_PER_PAGE)
     : [];
-  const totalPages = selectedCell ? Math.ceil(selectedCell.availableCount / ROOMS_PER_PAGE) : 1;
+  const totalPages = selectedCell ? Math.max(1, Math.ceil(selectedCell.availableCount / ROOMS_PER_PAGE)) : 1;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 font-sans">
       
-      {/* Controls Section */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6 border-b pb-4">
         <div className="flex items-center gap-3">
           <Calendar className="w-8 h-8 text-blue-600" />
@@ -137,7 +144,6 @@ export default function Heatmap() {
         </div>
         
         <div className="flex flex-col sm:flex-row items-center gap-3">
-          {/* Room Type Filter */}
           <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200 w-full sm:w-auto">
             <Filter className="w-4 h-4 text-slate-500 ml-1" />
             <select 
@@ -145,13 +151,12 @@ export default function Heatmap() {
               onChange={(e) => { setRoomCategory(e.target.value); setSelectedCell(null); }}
               className="bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer w-full"
             >
-              <option value="All">All Rooms</option>
-              <option value="Lab">IT Labs Only</option>
-              <option value="Lecture">Lectures & Specialties</option>
+              <option value="All">All Rooms ({roomCounts.total})</option>
+              <option value="Lab">IT Labs ({roomCounts.labs})</option>
+              <option value="Lecture">Lectures ({roomCounts.lectures})</option>
             </select>
           </div>
 
-          {/* Duration Filter */}
           <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200 w-full sm:w-auto">
             <Clock className="w-4 h-4 text-slate-500 ml-1" />
             <select 
@@ -192,7 +197,7 @@ export default function Heatmap() {
               </div>
               
               {DAYS.map(day => {
-                const cellData = heatmapData[day]?.[time] || { availableCount: 0, totalCount: 19, availableRooms: [] };
+                const cellData = heatmapData[day]?.[time] || { availableCount: 0, totalCount: roomCounts.total, availableRooms: [] };
                 const isSelected = selectedCell?.day === day && selectedCell?.time === time;
                 const isOutOfBounds = index + requiredBlocks > TIMES.length;
                 
@@ -216,7 +221,6 @@ export default function Heatmap() {
         </div>
       </div>
 
-      {/* Selected Details Panel with Pagination */}
       {selectedCell && (
         <div className="mt-8 bg-slate-50 border border-slate-200 rounded-xl p-6 animate-in fade-in slide-in-from-bottom-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4 mb-6">
@@ -234,7 +238,6 @@ export default function Heatmap() {
               </div>
             </div>
 
-            {/* Pagination Controls */}
             {totalPages > 1 && (
               <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
                 <button 
